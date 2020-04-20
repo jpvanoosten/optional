@@ -28,11 +28,14 @@
   *  @author Jeremiah van Oosten
   *
   *  @brief C++11 version of C++17's std::optional type based on boost::optional.
+  *  @see https://www.boost.org/doc/libs/1_72_0/libs/optional/doc/html/index.html
   */
 
+#include <cassert>      // for assert
 #include <exception>    // for std::exception
 #include <type_traits>
 #include <utility>      // for std::move
+#include <memory>       // for std::addressof
 
   // Check for inline variable support (requires C++17)
 #if defined(__cpp_inline_variables) && __cpp_inline_variables >= 201606L
@@ -68,12 +71,6 @@ namespace opt
     // Forward declare optional template class.
     template<class T> class optional;
     template<class T> class optional<T&>;
-
-    // This forward is needed to refer to namespace scope swap from the member swap
-    template<class T> struct optional_swap_should_use_default_constructor;
-    template<class T> void swap(optional<T>&, optional<T>&);
-    template<class T> void swap(optional<T&>&, optional<T&>&) noexcept;
-
 
     namespace detail
     {
@@ -125,7 +122,7 @@ namespace opt
             {}
 
             // Creates an optional<T> uninitialized
-            optional_base(nullopt_t) noexcept
+            optional_base(opt::nullopt_t) noexcept
                 : m_initialized(false)
             {}
 
@@ -202,8 +199,8 @@ namespace opt
             }
 
             optional_base& operator=(optional_base&& rhs)
-                noexcept((std::is_nothrow_move_constructible<T>::value&&
-                    std::is_nothrow_move_assignable<T>::value))
+                noexcept((std::is_nothrow_move_constructible<T>::value
+                    && std::is_nothrow_move_assignable<T>::value))
             {
                 // This is the original cast from the boost C++ library.
                 // Note: Shouldn't this be this->assign(std::move(rhs)) ?
@@ -310,7 +307,7 @@ namespace opt
 
             // Assigns from "none", destroying the current value, if any, leaving this UNINITIALIZED
             // No-throw (assuming T::~T() doesn't)
-            void assign(nullopt_t) noexcept
+            void assign(opt::nullopt_t) noexcept
             {
                 destroy();
             }
@@ -415,6 +412,8 @@ namespace opt
 
             void assign_value(rval_reference_type val)
             {
+                // Note: Shouldn't this be?:
+                // get_impl() = std::move(val);
                 get_impl() = static_cast<rval_reference_type>(val);
             }
 
@@ -439,19 +438,539 @@ namespace opt
                 return reinterpret_cast<pointer_const_type>(&m_storage);
             }
 
-            pointer_type get_ptr_impl() 
-            { 
-                return reinterpret_cast<pointer_type>(&m_storage); 
+            pointer_type get_ptr_impl()
+            {
+                return reinterpret_cast<pointer_type>(&m_storage);
             }
 
         private:
-            void destroy_impl() 
-            { 
+            void destroy_impl()
+            {
                 get_impl().~T();
                 m_initialized = false;
             }
         };
 
-    }
-}
+        // Trivilally-copyable version of the storage
+        template<class T>
+        class tc_optional_base : public optional_tag
+        {
+        private:
+            using this_type = tc_optional_base<T>;
+
+            bool m_initialized;
+            T    m_storage;
+
+        protected:
+            using value_type = T;
+            using reference_type = T&;
+            using reference_const_type = T const&;
+            using rval_reference_type = T&&;
+            using reference_type_of_temporary_wrapper = T&&;
+            using pointer_type = T*;
+            using pointer_const_type = T const*;
+            using argument_type = T const&;
+
+            tc_optional_base()
+                : m_initialized(false)
+            {}
+
+            tc_optional_base(opt::nullopt_t)
+                : m_initialized(false)
+            {}
+
+            tc_optional_base(init_value_tag, argument_type val)
+                : m_initialized(true)
+                , m_storage(val)
+            {}
+
+            tc_optional_base(bool cond, argument_type val)
+                : m_initialized(cond)
+                , m_storage(val)
+            {}
+
+            template<class Expr, class PtrExpr>
+            explicit tc_optional_base(Expr&& expr, PtrExpr const* tag)
+                : m_initialized(false)
+            {
+                construct(std::forward<Expr>(expr), tag);
+            }
+
+            // Assigns from another optional<T> (deep-copies the rhs value)
+            void assign(tc_optional_base const& rhs)
+            {
+                *this = rhs;
+            }
+
+            // Assigns from another _convertible_ optional<U> (deep-copies the rhs value)
+            template<class U>
+            void assign(optional<U> const& rhs)
+            {
+                if (rhs.is_initialized())
+                    m_storage = rhs.get();
+
+                m_initialized = rhs.is_initialized();
+            }
+
+            // move-assigns from another _convertible_ optional<U> (deep-moves from the rhs value)
+            template<class U>
+            void assign(optional<U>&& rhs)
+            {
+                using ref_type = optional<U>::rval_reference_type;
+
+                if (rhs.is_initialized())
+                    m_storage = static_cast<ref_type>(rhs.get());
+
+                m_initialized = rhs.is_initialized();
+            }
+
+            void assign(argument_type val)
+            {
+                construct(val);
+            }
+
+            void assign(opt::nullopt_t)
+            {
+                destroy();
+            }
+
+        public:
+
+            // Destroys the current value, if any, leaving this UNINITIALIZED
+            // No-throw (assuming T::~T() doesn't)
+            void reset() noexcept
+            {
+                destroy();
+            }
+
+            // Returns a pointer to the value if this is initialized, otherwise,
+            // returns NULL.
+            // No-throw
+            pointer_const_type get_ptr() const noexcept
+            {
+                return m_initialized ? get_ptr_impl() : nullptr;
+            }
+
+            pointer_type get_ptr() noexcept
+            {
+                return m_initialized ? get_ptr_impl() : nullptr;
+            }
+
+            bool is_initialized() const noexcept
+            {
+                return m_initialized;
+            }
+
+        protected:
+            void construct(argument_type val)
+            {
+                m_storage = val;
+                m_initialized = true;
+            }
+
+            // Constructs in-place
+// upon exception *this is always uninitialized
+            template<class... Args>
+            void construct(in_place_init_t, Args&&... args)
+            {
+                m_storage = value_type(std::forward<Args>(args)...);
+                m_initialized = true;
+            }
+
+            template<class... Args>
+            void emplace_assign(Args&&... args)
+            {
+                construct(in_place_init, std::forward<Args>(args)...);
+            }
+
+            template<class... Args>
+            explicit tc_optional_base(in_place_init_t, Args&&... args)
+                : m_initialized(false)
+            {
+                construct(in_place_init, std::forward<Args>(args)...);
+            }
+
+            template<class... Args>
+            explicit tc_optional_base(in_place_init_if_t, bool cond, Args&&... args)
+                : m_initialized(false)
+            {
+                if (cond)
+                    construct(in_place_init, std::forward<Args>(args)...);
+            }
+
+            // Constructs using any expression implicitly convertible to the single argument
+            // of a one-argument T constructor.
+            // Converting constructions of optional<T> from optional<U> uses this function with
+            // 'Expr' being of type 'U' and relying on a converting constructor of T from U.
+            template<class Expr>
+            void construct(Expr&& expr, void const*)
+            {
+                m_storage = value_type(std::forward<Expr>(expr));
+                m_initialized = true;
+            }
+
+            // Assigns using a form any expression implicitly convertible to the single argument
+            // of a T's assignment operator.
+            // Converting assignments of optional<T> from optional<U> uses this function with
+            // 'Expr' being of type 'U' and relying on a converting assignment of T from U.
+            template<class Expr>
+            void assign_expr_to_initialized(Expr&& expr, void const*)
+            {
+                assign_value(std::forward<Expr>(expr));
+            }
+
+            void assign_value(argument_type val)
+            {
+                m_storage = val;
+            }
+
+            void assign_value(rval_reference_type val)
+            {
+                m_storage = static_cast<rval_reference_type>(val);
+            }
+
+            reference_const_type get_impl() const
+            {
+                return m_storage;
+            }
+
+            reference_type get_impl()
+            {
+                return m_storage;
+            }
+
+            pointer_const_type get_ptr_impl() const
+            {
+                return std::addressof(m_storage);
+            }
+
+            pointer_type get_ptr_impl()
+            {
+                return std::addressof(m_storage);
+            }
+
+            void destroy()
+            {
+                m_initialized = false;
+            }
+        };
+
+        namespace traits
+        {
+            // Since C++14
+            // @see https://en.cppreference.com/w/cpp/types/decay
+            template< class T >
+            using decay_t = typename std::decay<T>::type;
+
+            // Since C++14
+            // @see https://en.cppreference.com/w/cpp/types/enable_if
+            template< bool B, class T = void >
+            using enable_if_t = typename std::enable_if<B, T>::type;
+
+            // Since C++14
+            // @see https://en.cppreference.com/w/cpp/types/conditional
+            template< bool B, class T, class F >
+            using conditional_t = typename std::conditional<B, T, F>::type;
+
+            // definition of metafunciton is_optional_val_init_candidate
+            template <typename U>
+            struct is_optional_related
+                : conditional_t<std::is_base_of<opt::detail::optional_tag, decay_t<U>>::value
+                || std::is_same<decay_t<U>, opt::nullopt_t>::value
+                || std::is_same<decay_t<U>, in_place_init_t>::value
+                || std::is_same<decay_t<U>, in_place_init_if_t>::value,
+                std::true_type, std::false_type>
+            {};
+
+            template <typename T, typename U>
+            struct is_optional_constructible : std::is_constructible<T, U>
+            {};
+
+            template <typename T, typename U>
+            struct is_optional_val_init_candidate
+                : conditional_t< !is_optional_related<U>::value&& std::is_convertible<T, U>::value
+                , std::true_type, std::false_type>
+            {};
+        } // namespace traits
+
+        namespace config
+        {
+            template <typename T>
+            struct optional_uses_direct_storage_for
+                : traits::conditional_t<std::is_scalar<T>::value && !std::is_const<T>::value && !std::is_volatile<T>::value
+                , std::true_type, std::false_type>
+            {};
+
+        } // namespace config
+
+        //template<typename T>
+        //using optional_base_type = traits::conditional_t< config::optional_uses_direct_storage_for<T>::value, tc_optional_base<T>, optional_base<T>>;
+
+        template<typename T>
+        using optional_base_type = traits::conditional_t< config::optional_uses_direct_storage_for<T>::value, tc_optional_base<T>, optional_base<T>>;
+
+    } // namespace detail
+
+    template<class T>
+    class optional : public detail::optional_base_type<T>
+    {
+    private:
+        using base = detail::optional_base_type<T>;
+
+    public:
+        using this_type = optional<T>;
+        using value_type = typename base::value_type;
+        using reference_type = typename base::reference_type;
+        using reference_const_type = typename base::reference_const_type;
+        using rval_reference_type = typename base::rval_reference_type;
+        using reference_type_of_temporary_wrapper = typename base::reference_type_of_temporary_wrapper;
+        using pointer_type = typename base::pointer_type;
+        using pointer_const_type = typename base::pointer_const_type;
+        using argument_type = typename base::argument_type;
+
+        // Creates an optional<T> uninitialized.
+        // No-throw
+        optional() noexcept
+            : base()
+        {}
+
+        // Creates an optional<T> uninitialized.
+        // No-throw
+        optional(nullopt_t none) noexcept
+            : base(none)
+        {}
+
+        // Creates an optional<T> initialized with 'val'.
+        // Can throw if T::T(T const&) does
+        optional(argument_type val)
+            : base(detail::init_value_tag(), val)
+        {}
+
+        // Creates an optional<T> initialized with 'move(val)'.
+        // Can throw if T::T(T &&) does
+        optional(rval_reference_type val)
+            : base(detail::init_value_tag(), std::forward<T>(val))
+        {}
+
+        /// Creates an optional<T> initialized with 'val' IFF cond is true, otherwise creates an uninitialized optional.
+        // Can throw if T::T(T &&) does
+        optional(bool cond, rval_reference_type val)
+            : base(cond, std::forward<T>(val))
+        {}
+
+        // Creates a deep copy of another convertible optional<U>
+        // Requires a valid conversion from U to T.
+        // Can throw if T::T(U const&) does
+        template<class U, typename = detail::traits::enable_if_t<detail::traits::is_optional_constructible<T, U const&>::value>>
+        explicit optional(optional<U> const& rhs)
+            : base()
+        {
+            if (rhs.is_initialized())
+                this->construct(rhs.get());
+        }
+
+        // Creates a deep move of another convertible optional<U>
+        // Requires a valid conversion from U to T.
+        // Can throw if T::T(U&&) does
+        template<class U, typename = detail::traits::enable_if_t<detail::traits::is_optional_constructible<T, U>::value>>
+        explicit optional(optional<U>&& rhs)
+            : base()
+        {
+            if (rhs.is_initialized())
+                this->construct(std::move(rhs.get()));
+        }
+
+        // Creates a deep copy of another optional<T>
+        // Can throw if T::T(T const&) does
+        optional(optional const&) = default;
+
+        // Creates a deep move of another optional<T>
+        // Can throw if T::T(T&&) does
+        optional(optional&& rhs) = default;
+
+        //  On old MSVC compilers the implicitly declared dtor is not called
+        ~optional() {}
+
+        // Copy-assigns from another convertible optional<U> (converts && deep-copies the rhs value)
+        // Requires a valid conversion from U to T.
+        // Basic Guarantee: If T::T( U const& ) throws, this is left UNINITIALIZED
+        template<class U>
+        optional& operator=(optional<U> const& rhs)
+        {
+            this->assign(rhs);
+            return *this;
+        }
+
+        // Move-assigns from another convertible optional<U> (converts && deep-moves the rhs value)
+        // Requires a valid conversion from U to T.
+        // Basic Guarantee: If T::T( U && ) throws, this is left UNINITIALIZED
+        template<class U>
+        optional& operator=(optional<U>&& rhs)
+        {
+            this->assign(std::move(rhs));
+            return *this;
+        }
+
+        // Assigns from another optional<T> (deep-copies the rhs value)
+        // Basic Guarantee: If T::T( T const& ) throws, this is left UNINITIALIZED
+        //  (NOTE: On BCB, this operator is not actually called and left is left UNMODIFIED in case of a throw)
+        optional& operator=(optional const& rhs) = default;
+
+        // Assigns from another optional<T> (deep-moves the rhs value)
+        optional& operator=(optional&&) = default;
+
+        // Assigns from a T (deep-moves/copies the rhs value)
+        template <typename U>
+        detail::traits::enable_if_t<std::is_same<T, detail::traits::decay_t<U>>::value, optional&>
+            operator=(U&& val)
+        {
+            this->assign(std::forward<U>(val));
+            return *this;
+        }
+
+        // Assigns from a T (deep-moves the rhs value)
+        optional& operator= (rval_reference_type val)
+        {
+            this->assign(std::move(val));
+            return *this;
+        }
+
+        // Assigns from a "none"
+        // Which destroys the current value, if any, leaving this UNINITIALIZED
+        // No-throw (assuming T::~T() doesn't)
+        optional& operator=(nullopt_t none) noexcept
+        {
+            this->assign(none);
+            return *this;
+        }
+
+        // Constructs in-place
+        // upon exception *this is always uninitialized
+        template<class... Args>
+        void emplace(Args&&... args)
+        {
+            this->emplace_assign(std::forward<Args>(args)...);
+        }
+
+        template<class... Args>
+        explicit optional(in_place_init_t, Args&&... args)
+            : base(in_place_init, std::forward<Args>(args)...)
+        {}
+
+        template<class... Args>
+        explicit optional(in_place_init_if_t, bool cond, Args&&... args)
+            : base(in_place_init_if, cond, std::forward<Args>(args)...)
+        {}
+
+        void swap(optional& arg) noexcept((std::is_nothrow_move_constructible<T>::value && std::is_nothrow_move_assignable<T>::value))
+        {
+            // allow for Koenig lookup
+            std::swap(*this, arg);
+        }
+
+        // Returns a reference to the value if this is initialized, otherwise,
+        // the behaviour is UNDEFINED
+        // No-throw
+        reference_const_type get() const
+        {
+            assert(this->is_initialized());
+            return this->get_impl();
+        }
+
+        reference_type get()
+        {
+            assert(this->is_initialized());
+            return this->get_impl();
+        }
+
+        // Returns a copy of the value if this is initialized, 'v' otherwise
+        reference_const_type get_value_or(reference_const_type v) const
+        {
+            return this->is_initialized() ? get() : v;
+        }
+
+        reference_type get_value_or(reference_type v) 
+        { 
+            return this->is_initialized() ? get() : v; 
+        }
+
+        // Returns a pointer to the value if this is initialized, otherwise,
+        // the behaviour is UNDEFINED
+        // No-throw
+        pointer_const_type operator->() const
+        { 
+            assert(this->is_initialized());
+            return this->get_ptr_impl();
+        }
+        pointer_type operator->()
+        { 
+            assert(this->is_initialized());
+            return this->get_ptr_impl();
+        }
+
+        // Returns a reference to the value if this is initialized, otherwise,
+        // the behaviour is UNDEFINED
+        // No-throw
+        reference_const_type operator*() const&
+        { 
+            return this->get(); 
+        }
+
+        reference_type operator*()& 
+        { 
+            return this->get(); 
+        }
+
+        reference_type_of_temporary_wrapper operator*()&& 
+        { 
+            return std::move(this->get()); 
+        }
+
+        reference_const_type value() const&
+        {
+            if (this->is_initialized())
+                return this->get();
+            else
+                throw bad_optional_access();
+        }
+
+        reference_type value()&
+        {
+            if (this->is_initialized())
+                return this->get();
+            else
+                throw bad_optional_access();
+        }
+
+        reference_type_of_temporary_wrapper value()&&
+        {
+            if (this->is_initialized())
+                return std::move(this->get());
+            else
+                throw bad_optional_access();
+        }
+
+        template <class U>
+        value_type value_or(U&& v) const&
+        {
+            if (this->is_initialized())
+                return get();
+            else
+                return std::forward<U>(v);
+        }
+
+        template <class U>
+        value_type value_or(U&& v)&&
+        {
+            if (this->is_initialized())
+                return std::move(get());
+            else
+                return std::forward<U>(v);
+        }
+
+
+
+    };
+
+} // namespace opt
 
