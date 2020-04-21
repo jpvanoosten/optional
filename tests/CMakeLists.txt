@@ -15,7 +15,7 @@ set( HEADER_FILES
     ../optional.hpp
 )
 
-add_executable( tests tests.cpp ${HEADER_FILES} )
+add_executable( tests optional_tests.cpp ${HEADER_FILES} )
 target_link_libraries( tests gtest gtest_main )
 target_include_directories( tests 
     PUBLIC ../
