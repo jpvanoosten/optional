@@ -3,8 +3,6 @@ name: C/C++ CI
 on:
   push:
     branches: [ dev ]
-  pull_request:
-    branches: [ master ]
 
 jobs:
   build:
@@ -20,7 +18,7 @@ jobs:
       run: |
         cd build
         cmake ..
-    - name: Build project.
+    - name: Build project
       run: cmake --build build/
     - name: Test project
       run: |
