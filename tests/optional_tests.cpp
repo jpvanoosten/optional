@@ -504,6 +504,7 @@ TEST(optional, Relational)
     // Declare an optional unsigned integer type.
     using ouint = optional<unsigned int>;
     using oruint = optional<unsigned int&>;
+    using ocruint = optional<const unsigned int&>;
 
     EXPECT_EQ(ouint(), ouint());            // Two disengaged optionals compare equal.
     EXPECT_LT(ouint(), ouint(0));           // Disengaged is always less than an engaged optional.
@@ -568,7 +569,90 @@ TEST(optional, Relational)
     EXPECT_LE(i1, oi1);
     EXPECT_GE(oi1, i0);
     EXPECT_LE(i0, oi1);
+    EXPECT_LE(oi0, i1);
+    EXPECT_GE(i1, oi0);
 
+    // Optional to const reference.
+    ocruint oci0 = i0;
+    ocruint oci1 = i1;
+
+    EXPECT_EQ(oci0, i0);                     // Compare with optional reference types.
+    EXPECT_EQ(i0, oci0);
+    EXPECT_NE(oci0, i1);
+    EXPECT_NE(i1, oci0);
+    EXPECT_LT(oci0, i1);
+    EXPECT_GT(i1, oci0);
+    EXPECT_GT(oci1, i0);
+    EXPECT_LT(i0, oci1);
+    EXPECT_GE(oci1, i1);
+    EXPECT_LE(i1, oci1);
+    EXPECT_GE(oci1, i0);
+    EXPECT_LE(i0, oci1);
+    EXPECT_LE(oci0, i1);
+    EXPECT_GE(i1, oci0);
+}
+
+enum class Gender
+{
+    Male,
+    Female,
+    Undecided
+};
+
+class Person
+{
+    std::string name;
+    unsigned int age;
+    Gender gender;
+
+public:
+    Person(const Person&) = default;
+    Person(const std::string& _name, int _age, Gender _gender)
+        : name(_name)
+        , age(_age)
+        , gender(_gender)
+    {}
+
+    bool operator==(const Person& rhs) const
+    {
+        return name == rhs.name && age == rhs.age && gender == rhs.gender;
+    }
+};
+
+TEST(optional, MakeOptional)
+{
+    int i = 0;
+    Person jeremiah("Jeremiah", 42, Gender::Male);
+
+    optional<int> oi1 = { true, 1 };
+
+    auto refi = std::ref(i);
+
+    auto oi = make_optional(0u);
+    auto oj = make_optional(refi);
+    auto ok = make_optional(true, i);
+    auto op = make_optional<Person>("Jeremiah", 42, Gender::Male);
+    auto opp = make_optional<Person>(false, jeremiah);
+
+    EXPECT_NE(oi, nullopt);
+    EXPECT_NE(oj, nullopt);
+    EXPECT_NE(ok, nullopt);
+    EXPECT_EQ(op, jeremiah);
+    EXPECT_FALSE(opp);
+    EXPECT_EQ(opp, nullopt);
+}
+TEST(optional, GetOptionalValue)
+{
+    optional<int> oi = 1;
+    const optional<int> coi = 2;
+
+    auto* p_oi = std::addressof(oi);
+    auto* p_coi = std::addressof(coi);
+
+    EXPECT_EQ(get(oi), 1);
+    EXPECT_EQ(get(coi), 2);
+    EXPECT_EQ(*get(p_oi), 1);
+    EXPECT_EQ(*get(p_coi), 2);
 
 }
 // TODO: Emplace and construct with initializer lists.

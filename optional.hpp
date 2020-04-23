@@ -1478,7 +1478,19 @@ namespace opt
     template<class T>
     constexpr optional<detail::traits::decay_t<T>> make_optional(bool cond, T&& v)
     {
-        return optional<detail::traits::decay_t<T>>(cond, std::forward<T>(v));
+        return optional<detail::traits::decay_t<T>>(in_place_if, cond, std::forward<T>(v));
+    }
+
+    template<class T, typename... Args>
+    constexpr optional<detail::traits::decay_t<T>> make_optional(Args&&... args)
+    {
+        return optional<detail::traits::decay_t<T>>(in_place, std::forward<Args>(args)...);
+    }
+
+    template<class T, typename... Args>
+    constexpr optional<detail::traits::decay_t<T>> make_optional(bool cond, Args&&... args)
+    {
+        return optional<detail::traits::decay_t<T>>(in_place_if, cond, std::forward<Args>(args)...);
     }
 
     template<class T>
@@ -1532,11 +1544,14 @@ namespace opt
     {
         return opt.get_ptr();
     }
+} // namespace opt
 
+namespace std
+{
+    // Specialization for optional
     template<class T>
-    void swap(optional<T>& x, optional<T>& y) noexcept(noexcept(x.swap(y)))
+    void swap(opt::optional<T>& x, opt::optional<T>& y) noexcept(noexcept(x.swap(y)))
     {
         x.swap(y);
     }
-
-} // namespace opt
+}
