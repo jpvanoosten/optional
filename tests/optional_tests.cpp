@@ -230,11 +230,11 @@ struct MoveAware
     bool moved;
     MoveAware(T val) : val(val), moved(false) {}
     MoveAware(MoveAware const&) = delete;
-    MoveAware(MoveAware&& rhs) : val(rhs.val), moved(rhs.moved) {
+    MoveAware(MoveAware&& rhs) noexcept : val(rhs.val), moved(rhs.moved) {
         rhs.moved = true;
     }
     MoveAware& operator=(MoveAware const&) = delete;
-    MoveAware& operator=(MoveAware&& rhs) {
+    MoveAware& operator=(MoveAware&& rhs) noexcept {
         val = (rhs.val);
         moved = (rhs.moved);
         rhs.moved = true;
@@ -447,7 +447,7 @@ struct Owner
         : i(_i)
     {}
 
-    Owner(Owner&& o)
+    Owner(Owner&& o) noexcept
         : i(o.i)
     {
         o.i = 0;
@@ -458,7 +458,7 @@ struct Owner
     // No copy-assignment.
     Owner& operator=(const Owner&) = delete;
 
-    Owner& operator=(Owner&& o)
+    Owner& operator=(Owner&& o) noexcept
     {
         i = o.i;
         o.i = 0;
@@ -655,4 +655,79 @@ TEST(optional, GetOptionalValue)
     EXPECT_EQ(*get(p_coi), 2);
 
 }
-// TODO: Emplace and construct with initializer lists.
+
+TEST(optional, InitializerLists)
+{
+    std::vector<int> v = { 5, 10, 15, 20 };
+
+    // Initialize an optional vector using an initializer list.
+    optional<std::vector<int>> ov{ in_place, { 2, 4, 6, 8 }};
+
+    EXPECT_EQ((*ov)[0], 2);
+    EXPECT_EQ((*ov)[1], 4);
+    EXPECT_EQ((*ov)[2], 6);
+    EXPECT_EQ((*ov)[3], 8);
+
+    ov.emplace({1, 3, 5, 7});
+
+    EXPECT_EQ((*ov)[0], 1);
+    EXPECT_EQ((*ov)[1], 3);
+    EXPECT_EQ((*ov)[2], 5);
+    EXPECT_EQ((*ov)[3], 7);
+
+    ov = v;
+
+    EXPECT_EQ(ov, v);
+    EXPECT_EQ((*ov)[0], 5);
+    EXPECT_EQ((*ov)[1], 10);
+    EXPECT_EQ((*ov)[2], 15);
+    EXPECT_EQ((*ov)[3], 20);
+}
+
+TEST(optional, BadOptionalAccess)
+{
+    optional<int> oi;
+    const optional<int> oj;
+    optional<int&> ok;
+    const optional<int&> ol;
+    optional<const int&> om;
+    const optional<const int&> on;
+
+    EXPECT_THROW(oi.value(), bad_optional_access);
+    EXPECT_THROW(oj.value(), bad_optional_access);
+    EXPECT_THROW(ok.value(), bad_optional_access);
+    EXPECT_THROW(ol.value(), bad_optional_access);
+    EXPECT_THROW(om.value(), bad_optional_access);
+    EXPECT_THROW(on.value(), bad_optional_access);
+}
+
+class Base
+{};
+
+class Derived : public Base
+{};
+
+TEST(optional, OptionalConversion)
+{
+    optional<float> opf(3.14f);
+    optional<double> opd;       // Disengaged optional double.
+
+    // Conversion of floating point types
+    opd = opf;                  // OK, implicit conversion to double.
+    opf = opd;                  // OK, narrowing conversion to float.
+
+    EXPECT_NEAR(*opf, 3.14f, 0.001f);
+    EXPECT_NEAR(*opd, 3.14, 0.001); // Close enough
+
+    optional<Base*> ob = new Base();
+    optional<Derived*> od = new Derived();
+    optional<Base*> obd{od};
+
+    EXPECT_TRUE(ob);
+    EXPECT_TRUE(od);
+    EXPECT_TRUE(obd);
+
+    // Conversion from Derived* to Base*
+    ob = od;
+    // od = ob; // Error cast from base to derived requires dynamic cast.
+}

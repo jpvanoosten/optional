@@ -57,6 +57,10 @@ namespace opt
         bad_optional_access(const char* what_arg)
             : std::logic_error(what_arg)
         {}
+
+        bad_optional_access(const std::string& what_arg)
+            : std::logic_error(what_arg)
+        {}
     };
 
     // Since C++17
@@ -159,11 +163,13 @@ namespace opt
             // Creates an optional<T> uninitialized
             optional_base() noexcept
                 : m_initialized(false)
+                , m_storage{}
             {}
 
             // Creates an optional<T> uninitialized
             optional_base(opt::nullopt_t) noexcept
                 : m_initialized(false)
+                , m_storage{}
             {}
 
             // Creates an optional<T> initialized with 'val'.
@@ -433,6 +439,7 @@ namespace opt
             template<class... Args>
             explicit optional_base(in_place_if_t, bool cond, Args&&... args)
                 : m_initialized(false)
+                , m_storage{}
             {
                 if (cond)
                     construct(in_place, std::forward<Args>(args)...);
@@ -533,22 +540,24 @@ namespace opt
             using pointer_const_type = T const*;
             using argument_type = T const&;
 
-            tc_optional_base()
+            tc_optional_base() noexcept
                 : m_initialized(false)
+                , m_storage{}
             {}
 
-            tc_optional_base(opt::nullopt_t)
+            tc_optional_base(opt::nullopt_t) noexcept
                 : m_initialized(false)
+                , m_storage{}
             {}
 
             tc_optional_base(init_value_tag, argument_type val)
                 : m_initialized(true)
-                , m_storage(val)
+                , m_storage{val}
             {}
 
             tc_optional_base(bool cond, argument_type val)
                 : m_initialized(cond)
-                , m_storage(val)
+                , m_storage{val}
             {}
 
             //template<class Expr>
@@ -669,6 +678,7 @@ namespace opt
             template<class... Args>
             explicit tc_optional_base(in_place_if_t, bool cond, Args&&... args)
                 : m_initialized(false)
+                , m_storage{}
             {
                 if (cond)
                     construct(in_place, std::forward<Args>(args)...);
@@ -762,8 +772,8 @@ namespace opt
     {
         static_assert(!std::is_same<detail::traits::decay_t<T>, nullopt_t>::value, "Cannot create optional<nullopt_t>");
         static_assert(!std::is_same<detail::traits::decay_t<T>, detail::optional_tag>::value, "Cannot create optional<optional_tag>");
-        static_assert(!std::is_same<detail::traits::decay_t<T>, in_place_t>::value, "Cannot create optional<in_place_init_t>");
-        static_assert(!std::is_same<detail::traits::decay_t<T>, in_place_if_t>::value, "Cannot create optional<in_place_init_if_t>");
+        static_assert(!std::is_same<detail::traits::decay_t<T>, in_place_t>::value, "Cannot create optional<in_place_t>");
+        static_assert(!std::is_same<detail::traits::decay_t<T>, in_place_if_t>::value, "Cannot create optional<in_place_if_t>");
 
     private:
         using base = detail::optional_base_type<T>;
@@ -896,6 +906,12 @@ namespace opt
             this->emplace_assign(std::forward<Args>(args)...);
         }
 
+        template<class U, class... Args>
+        void emplace(std::initializer_list<U> il, Args&&... args)
+        {
+            this->emplace_assign(il, std::forward<Args>(args)...);
+        }
+
         template<class... Args>
         explicit optional(in_place_t, Args&&... args)
             : base(in_place, std::forward<Args>(args)...)
@@ -985,7 +1001,7 @@ namespace opt
             if (this->is_initialized())
                 return this->get();
             else
-                throw bad_optional_access();
+                throw bad_optional_access("Attempted to retrieve the value of a disengaged optional.");
         }
 
         reference_type value()&
@@ -993,7 +1009,7 @@ namespace opt
             if (this->is_initialized())
                 return this->get();
             else
-                throw bad_optional_access();
+                throw bad_optional_access("Attempted to retrieve the value of a disengaged optional.");
         }
 
         reference_type_of_temporary_wrapper value()&&
@@ -1001,7 +1017,7 @@ namespace opt
             if (this->is_initialized())
                 return std::move(this->get());
             else
-                throw bad_optional_access();
+                throw bad_optional_access("Attempted to retrieve the value of a disengaged optional.");
         }
 
         template <class U>
@@ -1109,7 +1125,7 @@ namespace opt
         }
 
         constexpr T& value() const {
-            return ref ? *ref : (throw bad_optional_access("bad optional access"), *ref);
+            return ref ? *ref : (throw bad_optional_access("Attempted to retrieve the value of a disengaged optional."), *ref);
         }
 
         explicit constexpr operator bool() const noexcept 
