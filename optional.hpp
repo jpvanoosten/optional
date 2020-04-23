@@ -51,11 +51,11 @@ namespace opt
 {
     // Since C++17
     // @see https://en.cppreference.com/w/cpp/utility/optional/bad_optional_access
-    class bad_optional_access : public std::exception
+    class bad_optional_access : public std::logic_error
     {
     public:
         bad_optional_access(const char* what_arg)
-            : std::exception(what_arg)
+            : std::logic_error(what_arg)
         {}
     };
 
@@ -69,7 +69,7 @@ namespace opt
 
     // Since C++17
     // @see https://en.cppreference.com/w/cpp/utility/optional/nullopt
-    INLINE_VAR nullopt_t nullopt(nullopt_t::init_tag());
+    INLINE_VAR nullopt_t nullopt{ nullopt_t::init_tag() };
 
     // Forward declare optional template class.
     template<class T> class optional;
@@ -79,25 +79,62 @@ namespace opt
     struct in_place_t
     {
         struct init_tag {};
-        explicit in_place_t(init_tag) {}
+        explicit constexpr in_place_t(init_tag) {}
     };
 
-    INLINE_VAR in_place_t in_place_init(in_place_t::init_tag());
+    INLINE_VAR in_place_t in_place{ in_place_t::init_tag() };
 
     // A tag for conditional in-place initialization of contained value.
     struct in_place_if_t
     {
         struct init_tag {};
-        explicit in_place_if_t(init_tag) {}
+        explicit constexpr in_place_if_t(init_tag) {}
     };
 
-    INLINE_VAR in_place_if_t in_place_init_if(in_place_if_t::init_tag());
+    INLINE_VAR in_place_if_t in_place_if{ in_place_if_t::init_tag() };
 
     namespace detail
     {
         struct init_value_tag {};
-
         struct optional_tag {};
+
+        namespace traits
+        {
+            // Since C++14
+            // @see https://en.cppreference.com/w/cpp/types/decay
+            template< class T >
+            using decay_t = typename std::decay<T>::type;
+
+            // Since C++14
+            // @see https://en.cppreference.com/w/cpp/types/enable_if
+            template< bool B, class T = void >
+            using enable_if_t = typename std::enable_if<B, T>::type;
+
+            // Since C++14
+            // @see https://en.cppreference.com/w/cpp/types/conditional
+            template< bool B, class T, class F >
+            using conditional_t = typename std::conditional<B, T, F>::type;
+
+            // definition of metafunciton is_optional_val_init_candidate
+            template <typename U>
+            struct is_optional_related
+                : conditional_t<std::is_base_of<opt::detail::optional_tag, decay_t<U>>::value
+                || std::is_same<decay_t<U>, opt::nullopt_t>::value
+                || std::is_same<decay_t<U>, in_place_t>::value
+                || std::is_same<decay_t<U>, in_place_if_t>::value,
+                std::true_type, std::false_type>
+            {};
+
+            template <typename T, typename U>
+            struct is_optional_constructible : std::is_constructible<T, U>
+            {};
+
+            template <typename T, typename U>
+            struct is_optional_val_init_candidate
+                : conditional_t<!is_optional_related<U>::value&& std::is_convertible<T, U>::value
+                , std::true_type, std::false_type>
+            {};
+        } // namespace traits
 
         template<typename T>
         class optional_base : public optional_tag
@@ -187,8 +224,8 @@ namespace opt
             // This is used for both converting and in-place constructions.
             // Derived classes use the 'tag' to select the appropriate
             // implementation (the correct 'construct()' overload)
-            template<class Expr, class PtrExpr>
-            explicit optional_base(Expr&& expr, PtrExpr const* tag)
+            template<class Expr>
+            explicit optional_base(Expr&& expr, void const* tag)
                 : m_initialized(false)
             {
                 construct(std::forward<Expr>(expr), tag);
@@ -376,21 +413,21 @@ namespace opt
             void emplace_assign(Args&&... args)
             {
                 destroy();
-                construct(in_place_init, std::forward<Args>(args)...);
+                construct(in_place, std::forward<Args>(args)...);
             }
 
             template<class... Args>
             explicit optional_base(in_place_t, Args&&... args)
                 : m_initialized(false)
             {
-                construct(in_place_init, std::forward<Args>(args)...);
+                construct(in_place, std::forward<Args>(args)...);
             }
 
             template<class U, class... Args, typename = detail::traits::enable_if_t<std::is_constructible<T, std::initializer_list<U>>::value>>
             explicit optional_base(in_place_t, std::initializer_list<U> il, Args&&... args)
                 : m_initialized(false)
             {
-                construct(in_place_init, il, std::forward<Args>(args)...);
+                construct(in_place, il, std::forward<Args>(args)...);
             }
 
             template<class... Args>
@@ -398,7 +435,7 @@ namespace opt
                 : m_initialized(false)
             {
                 if (cond)
-                    construct(in_place_init, std::forward<Args>(args)...);
+                    construct(in_place, std::forward<Args>(args)...);
             }
 
             template<class U, class... Args, typename = detail::traits::enable_if_t<std::is_constructible<T, std::initializer_list<U>>::value>>
@@ -406,29 +443,29 @@ namespace opt
                 : m_initialized(false)
             {
                 if (cond)
-                    construct(in_place_init, il, std::forward<Args>(args)...);
+                    construct(in_place, il, std::forward<Args>(args)...);
             }
 
-            // Constructs using any expression implicitly convertible to the single argument
-            // of a one-argument T constructor.
-            // Converting constructions of optional<T> from optional<U> uses this function with
-            // 'Expr' being of type 'U' and relying on a converting constructor of T from U.
-            template<class Expr>
-            void construct(Expr&& expr, void const*)
-            {
-                new (&m_storage) value_type(std::forward<Expr>(expr));
-                m_initialized = true;
-            }
+            //// Constructs using any expression implicitly convertible to the single argument
+            //// of a one-argument T constructor.
+            //// Converting constructions of optional<T> from optional<U> uses this function with
+            //// 'Expr' being of type 'U' and relying on a converting constructor of T from U.
+            //template<class Expr>
+            //void construct(Expr&& expr, void const*)
+            //{
+            //    new (&m_storage) value_type(std::forward<Expr>(expr));
+            //    m_initialized = true;
+            //}
 
             // Assigns using a form any expression implicitly convertible to the single argument
             // of a T's assignment operator.
             // Converting assignments of optional<T> from optional<U> uses this function with
             // 'Expr' being of type 'U' and relying on a converting assignment of T from U.
-            template<class Expr>
-            void assign_expr_to_initialized(Expr&& expr, void const*)
-            {
-                assign_value(std::forward<Expr>(expr));
-            }
+            //template<class Expr>
+            //void assign_expr_to_initialized(Expr&& expr, void const*)
+            //{
+            //    assign_value(std::forward<Expr>(expr));
+            //}
 
             void assign_value(argument_type val)
             {
@@ -514,12 +551,12 @@ namespace opt
                 , m_storage(val)
             {}
 
-            template<class Expr, class PtrExpr>
-            explicit tc_optional_base(Expr&& expr, PtrExpr const* tag)
-                : m_initialized(false)
-            {
-                construct(std::forward<Expr>(expr), tag);
-            }
+            //template<class Expr>
+            //explicit tc_optional_base(Expr&& expr, void const* tag)
+            //    : m_initialized(false)
+            //{
+            //    construct(std::forward<Expr>(expr), tag);
+            //}
 
             // Assigns from another optional<T> (deep-copies the rhs value)
             void assign(tc_optional_base const& rhs)
@@ -541,7 +578,7 @@ namespace opt
             template<class U>
             void assign(optional<U>&& rhs)
             {
-                using ref_type = optional<U>::rval_reference_type;
+                using ref_type = typename optional<U>::rval_reference_type;
 
                 if (rhs.is_initialized())
                     m_storage = static_cast<ref_type>(rhs.get());
@@ -612,21 +649,21 @@ namespace opt
             template<class... Args>
             void emplace_assign(Args&&... args)
             {
-                construct(in_place_init, std::forward<Args>(args)...);
+                construct(in_place, std::forward<Args>(args)...);
             }
 
             template<class... Args>
             explicit tc_optional_base(in_place_t, Args&&... args)
                 : m_initialized(false)
             {
-                construct(in_place_init, std::forward<Args>(args)...);
+                construct(in_place, std::forward<Args>(args)...);
             }
 
             template<class U, class... Args, typename = detail::traits::enable_if_t<std::is_constructible<T, std::initializer_list<U>>::value>>
             explicit tc_optional_base(in_place_t, std::initializer_list<U> il, Args&&... args)
                 : m_initialized(false)
             {
-                construct(in_place_init, il, std::forward<Args>(args)...);
+                construct(in_place, il, std::forward<Args>(args)...);
             }
 
             template<class... Args>
@@ -634,7 +671,7 @@ namespace opt
                 : m_initialized(false)
             {
                 if (cond)
-                    construct(in_place_init, std::forward<Args>(args)...);
+                    construct(in_place, std::forward<Args>(args)...);
             }
 
             template<class U, class... Args, typename = detail::traits::enable_if_t<std::is_constructible<T, std::initializer_list<U>>::value>>
@@ -642,29 +679,29 @@ namespace opt
                 : m_initialized(false)
             {
                 if (cond)
-                    construct(in_place_init, il, std::forward<Args>(args)...);
+                    construct(in_place, il, std::forward<Args>(args)...);
             }
 
             // Constructs using any expression implicitly convertible to the single argument
             // of a one-argument T constructor.
             // Converting constructions of optional<T> from optional<U> uses this function with
             // 'Expr' being of type 'U' and relying on a converting constructor of T from U.
-            template<class Expr>
-            void construct(Expr&& expr, void const*)
-            {
-                m_storage = value_type(std::forward<Expr>(expr));
-                m_initialized = true;
-            }
+            //template<class Expr>
+            //void construct(Expr&& expr, void const*)
+            //{
+            //    m_storage = value_type(std::forward<Expr>(expr));
+            //    m_initialized = true;
+            //}
 
             // Assigns using a form any expression implicitly convertible to the single argument
             // of a T's assignment operator.
             // Converting assignments of optional<T> from optional<U> uses this function with
             // 'Expr' being of type 'U' and relying on a converting assignment of T from U.
-            template<class Expr>
-            void assign_expr_to_initialized(Expr&& expr, void const*)
-            {
-                assign_value(std::forward<Expr>(expr));
-            }
+            //template<class Expr>
+            //void assign_expr_to_initialized(Expr&& expr, void const*)
+            //{
+            //    assign_value(std::forward<Expr>(expr));
+            //}
 
             void assign_value(argument_type val)
             {
@@ -702,44 +739,6 @@ namespace opt
             }
         };
 
-        namespace traits
-        {
-            // Since C++14
-            // @see https://en.cppreference.com/w/cpp/types/decay
-            template< class T >
-            using decay_t = typename std::decay<T>::type;
-
-            // Since C++14
-            // @see https://en.cppreference.com/w/cpp/types/enable_if
-            template< bool B, class T = void >
-            using enable_if_t = typename std::enable_if<B, T>::type;
-
-            // Since C++14
-            // @see https://en.cppreference.com/w/cpp/types/conditional
-            template< bool B, class T, class F >
-            using conditional_t = typename std::conditional<B, T, F>::type;
-
-            // definition of metafunciton is_optional_val_init_candidate
-            template <typename U>
-            struct is_optional_related
-                : conditional_t<std::is_base_of<opt::detail::optional_tag, decay_t<U>>::value
-                || std::is_same<decay_t<U>, opt::nullopt_t>::value
-                || std::is_same<decay_t<U>, in_place_t>::value
-                || std::is_same<decay_t<U>, in_place_if_t>::value,
-                std::true_type, std::false_type>
-            {};
-
-            template <typename T, typename U>
-            struct is_optional_constructible : std::is_constructible<T, U>
-            {};
-
-            template <typename T, typename U>
-            struct is_optional_val_init_candidate
-                : conditional_t<!is_optional_related<U>::value&& std::is_convertible<T, U>::value
-                , std::true_type, std::false_type>
-            {};
-        } // namespace traits
-
         namespace config
         {
             template <typename T>
@@ -763,8 +762,8 @@ namespace opt
     {
         static_assert(!std::is_same<detail::traits::decay_t<T>, nullopt_t>::value, "Cannot create optional<nullopt_t>");
         static_assert(!std::is_same<detail::traits::decay_t<T>, detail::optional_tag>::value, "Cannot create optional<optional_tag>");
-        static_assert(!std::is_same<detail::traits::decay_t<T>, detail::in_place_init_t>::value, "Cannot create optional<in_place_init_t>");
-        static_assert(!std::is_same<detail::traits::decay_t<T>, detail::in_place_init_if_t>::value, "Cannot create optional<in_place_init_if_t>");
+        static_assert(!std::is_same<detail::traits::decay_t<T>, in_place_t>::value, "Cannot create optional<in_place_init_t>");
+        static_assert(!std::is_same<detail::traits::decay_t<T>, in_place_if_t>::value, "Cannot create optional<in_place_init_if_t>");
 
     private:
         using base = detail::optional_base_type<T>;
@@ -880,13 +879,6 @@ namespace opt
             return *this;
         }
 
-        // Assigns from a T (deep-moves the rhs value)
-        optional& operator= (rval_reference_type val)
-        {
-            this->assign(std::move(val));
-            return *this;
-        }
-
         // Assigns from a "none"
         // Which destroys the current value, if any, leaving this UNINITIALIZED
         // No-throw (assuming T::~T() doesn't)
@@ -906,22 +898,22 @@ namespace opt
 
         template<class... Args>
         explicit optional(in_place_t, Args&&... args)
-            : base(in_place_init, std::forward<Args>(args)...)
+            : base(in_place, std::forward<Args>(args)...)
         {}
 
         template<class U, class... Args, typename = detail::traits::enable_if_t<std::is_constructible<T, std::initializer_list<U>>::value>>
         explicit optional(in_place_t, std::initializer_list<U> il, Args&&... args)
-            : base(in_place_init, il, std::forward<Args>(args)...)
+            : base(in_place, il, std::forward<Args>(args)...)
         {}
 
         template<class... Args>
         explicit optional(in_place_if_t, bool cond, Args&&... args)
-            : base(in_place_init_if, cond, std::forward<Args>(args)...)
+            : base(in_place_if, cond, std::forward<Args>(args)...)
         {}
 
         template<class U, class... Args, typename = detail::traits::enable_if_t<std::is_constructible<T, std::initializer_list<U>>::value>>
         explicit optional(in_place_if_t, bool cond, std::initializer_list<U> il, Args&&... args)
-            : base(in_place_init_if, cond, il, std::forward<Args>(args)...)
+            : base(in_place_if, cond, il, std::forward<Args>(args)...)
         {}
 
         void swap(optional& rhs) noexcept((std::is_nothrow_move_constructible<T>::value&& std::is_nothrow_move_assignable<T>::value))
@@ -1049,8 +1041,8 @@ namespace opt
     {
         static_assert(!std::is_same<T, nullopt_t>::value, "Cannot create optional<nullopt_t>");
         static_assert(!std::is_same<T, detail::optional_tag>::value, "Cannot create optional<optional_tag>");
-        static_assert(!std::is_same<T, detail::in_place_init_t>::value, "Cannot create optional<in_place_init_t>");
-        static_assert(!std::is_same<T, detail::in_place_init_if_t>::value, "Cannot create optional<in_place_init_if_t>");
+        static_assert(!std::is_same<T, in_place_t>::value, "Cannot create optional<in_place_init_t>");
+        static_assert(!std::is_same<T, in_place_if_t>::value, "Cannot create optional<in_place_init_if_t>");
 
         T* ref;
 
@@ -1120,7 +1112,8 @@ namespace opt
             return ref ? *ref : (throw bad_optional_access("bad optional access"), *ref);
         }
 
-        explicit constexpr operator bool() const noexcept {
+        explicit constexpr operator bool() const noexcept 
+        {
             return ref != nullptr;
         }
 
@@ -1147,7 +1140,7 @@ namespace opt
     template <class T>
     constexpr bool operator==(const optional<T>& x, const optional<T>& y)
     {
-        return bool(x) != bool(y) ? false : bool(x) == false ? true : *x == *y;
+        return bool(x) && bool(y) ? *x == *y : bool(x) == bool(y);
     }
 
     template <class T>
@@ -1180,297 +1173,291 @@ namespace opt
         return !(x < y);
     }
 
-
-    // 20.5.9, Comparison with nullopt
-    template <class T> 
+    template <class T>
     constexpr bool operator==(const optional<T>& x, nullopt_t) noexcept
     {
         return (!x);
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator==(nullopt_t, const optional<T>& x) noexcept
     {
         return (!x);
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(const optional<T>& x, nullopt_t) noexcept
     {
         return bool(x);
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(nullopt_t, const optional<T>& x) noexcept
     {
         return bool(x);
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(const optional<T>&, nullopt_t) noexcept
     {
         return false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(nullopt_t, const optional<T>& x) noexcept
     {
         return bool(x);
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(const optional<T>& x, nullopt_t) noexcept
     {
         return (!x);
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(nullopt_t, const optional<T>&) noexcept
     {
         return true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(const optional<T>& x, nullopt_t) noexcept
     {
         return bool(x);
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(nullopt_t, const optional<T>&) noexcept
     {
         return false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(const optional<T>&, nullopt_t) noexcept
     {
         return true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(nullopt_t, const optional<T>& x) noexcept
     {
         return (!x);
     }
 
-
-
-    // 20.5.10, Comparison with T
-    template <class T> 
+    template <class T>
     constexpr bool operator==(const optional<T>& x, const T& v)
     {
         return bool(x) ? *x == v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator==(const T& v, const optional<T>& x)
     {
         return bool(x) ? v == *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(const optional<T>& x, const T& v)
     {
         return bool(x) ? *x != v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(const T& v, const optional<T>& x)
     {
         return bool(x) ? v != *x : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(const optional<T>& x, const T& v)
     {
         return bool(x) ? *x < v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(const T& v, const optional<T>& x)
     {
         return bool(x) ? v > * x : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(const optional<T>& x, const T& v)
     {
         return bool(x) ? *x > v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(const T& v, const optional<T>& x)
     {
         return bool(x) ? v < *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(const optional<T>& x, const T& v)
     {
         return bool(x) ? *x >= v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(const T& v, const optional<T>& x)
     {
         return bool(x) ? v <= *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(const optional<T>& x, const T& v)
     {
         return bool(x) ? *x <= v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(const T& v, const optional<T>& x)
     {
         return bool(x) ? v >= *x : true;
     }
 
-
     // Comparison of optional<T&> with T
-    template <class T> 
+    template <class T>
     constexpr bool operator==(const optional<T&>& x, const T& v)
     {
         return bool(x) ? *x == v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator==(const T& v, const optional<T&>& x)
     {
         return bool(x) ? v == *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(const optional<T&>& x, const T& v)
     {
         return bool(x) ? *x != v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(const T& v, const optional<T&>& x)
     {
         return bool(x) ? v != *x : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(const optional<T&>& x, const T& v)
     {
         return bool(x) ? *x < v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(const T& v, const optional<T&>& x)
     {
         return bool(x) ? v > * x : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(const optional<T&>& x, const T& v)
     {
         return bool(x) ? *x > v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(const T& v, const optional<T&>& x)
     {
         return bool(x) ? v < *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(const optional<T&>& x, const T& v)
     {
         return bool(x) ? *x >= v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(const T& v, const optional<T&>& x)
     {
         return bool(x) ? v <= *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(const optional<T&>& x, const T& v)
     {
         return bool(x) ? *x <= v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(const T& v, const optional<T&>& x)
     {
         return bool(x) ? v >= *x : true;
     }
 
     // Comparison of optional<T const&> with T
-    template <class T> 
+    template <class T>
     constexpr bool operator==(const optional<const T&>& x, const T& v)
     {
         return bool(x) ? *x == v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator==(const T& v, const optional<const T&>& x)
     {
         return bool(x) ? v == *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(const optional<const T&>& x, const T& v)
     {
         return bool(x) ? *x != v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator!=(const T& v, const optional<const T&>& x)
     {
         return bool(x) ? v != *x : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(const optional<const T&>& x, const T& v)
     {
         return bool(x) ? *x < v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(const T& v, const optional<const T&>& x)
     {
         return bool(x) ? v > * x : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>(const optional<const T&>& x, const T& v)
     {
         return bool(x) ? *x > v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<(const T& v, const optional<const T&>& x)
     {
         return bool(x) ? v < *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(const optional<const T&>& x, const T& v)
     {
         return bool(x) ? *x >= v : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(const T& v, const optional<const T&>& x)
     {
         return bool(x) ? v <= *x : false;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator<=(const optional<const T&>& x, const T& v)
     {
         return bool(x) ? *x <= v : true;
     }
 
-    template <class T> 
+    template <class T>
     constexpr bool operator>=(const T& v, const optional<const T&>& x)
     {
         return bool(x) ? v >= *x : true;
@@ -1553,4 +1540,3 @@ namespace opt
     }
 
 } // namespace opt
-
