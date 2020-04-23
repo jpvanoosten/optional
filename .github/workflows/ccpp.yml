@@ -23,4 +23,6 @@ jobs:
     - name: Build project.
       run: cmake --build build/
     - name: Test project
-      run: ls -la
+      run: |
+        cd build
+        ctest
