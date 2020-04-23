@@ -42,9 +42,9 @@
 
   // Check for inline variable support (requires C++17)
 #if defined(__cpp_inline_variables) && __cpp_inline_variables >= 201606L
-#define INLINE_VAR inline constexpr
+#define OPT_INLINE_VAR inline constexpr
 #else
-#define INLINE_VAR constexpr
+#define OPT_INLINE_VAR constexpr
 #endif
 
 namespace opt
@@ -69,7 +69,7 @@ namespace opt
 
     // Since C++17
     // @see https://en.cppreference.com/w/cpp/utility/optional/nullopt
-    INLINE_VAR nullopt_t nullopt{ nullopt_t::init_tag() };
+    OPT_INLINE_VAR nullopt_t nullopt{ nullopt_t::init_tag() };
 
     // Forward declare optional template class.
     template<class T> class optional;
@@ -82,7 +82,7 @@ namespace opt
         explicit constexpr in_place_t(init_tag) {}
     };
 
-    INLINE_VAR in_place_t in_place{ in_place_t::init_tag() };
+    OPT_INLINE_VAR in_place_t in_place{ in_place_t::init_tag() };
 
     // A tag for conditional in-place initialization of contained value.
     struct in_place_if_t
@@ -91,7 +91,7 @@ namespace opt
         explicit constexpr in_place_if_t(init_tag) {}
     };
 
-    INLINE_VAR in_place_if_t in_place_if{ in_place_if_t::init_tag() };
+    OPT_INLINE_VAR in_place_if_t in_place_if{ in_place_if_t::init_tag() };
 
     namespace detail
     {
