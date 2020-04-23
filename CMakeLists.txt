@@ -5,6 +5,10 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 project( optional LANGUAGES CXX )
 
+# specify the C++ standard
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
+
 # Enable testing.
 include(CTest)
 
