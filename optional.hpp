@@ -1114,14 +1114,12 @@ namespace opt
 
         constexpr T* operator->() const
         {
-            assert(ref);
-            return ref;
+            return ref ? ref : (throw bad_optional_access("Attempted to retrieve the value of a disengaged optional."), ref);
         }
 
         constexpr T& operator*() const
         {
-            assert(ref);
-            return *ref;
+            return ref ? *ref : (throw bad_optional_access("Attempted to retrieve the value of a disengaged optional."), *ref);
         }
 
         constexpr T& value() const {
