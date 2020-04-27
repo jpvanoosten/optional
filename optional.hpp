@@ -939,7 +939,7 @@ namespace opt
         }
 
         // Returns a reference to the value if this is initialized, otherwise,
-        // the behaviour is UNDEFINED
+        // the behavior is UNDEFINED
         // No-throw
         reference_const_type get() const
         {
@@ -1114,12 +1114,12 @@ namespace opt
 
         constexpr T* operator->() const
         {
-            return ref ? ref : (throw bad_optional_access("Attempted to retrieve the value of a disengaged optional."), ref);
+            return ref ? ref : (assert(ref), ref);
         }
 
         constexpr T& operator*() const
         {
-            return ref ? *ref : (throw bad_optional_access("Attempted to retrieve the value of a disengaged optional."), *ref);
+            return ref ? *ref : (assert(ref), *ref);
         }
 
         constexpr T& value() const {
