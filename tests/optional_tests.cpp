@@ -692,6 +692,16 @@ TEST(optional, BadOptionalAccess)
     const optional<int&> ol;
     optional<const int&> om;
     const optional<const int&> on;
+    optional<Person> oo;
+
+    // Trying to access the value of a disengaged optional should assert in debug mode.
+    EXPECT_DEBUG_DEATH(*oi, "Assertion failed");
+    EXPECT_DEBUG_DEATH(*oj, "Assertion failed");
+    EXPECT_DEBUG_DEATH(*ok, "Assertion failed");
+    EXPECT_DEBUG_DEATH(*ol, "Assertion failed");
+    EXPECT_DEBUG_DEATH(*om, "Assertion failed");
+    EXPECT_DEBUG_DEATH(*on, "Assertion failed");
+    EXPECT_DEBUG_DEATH(*oo, "Assertion failed");
 
     EXPECT_THROW(oi.value(), bad_optional_access);
     EXPECT_THROW(oj.value(), bad_optional_access);
@@ -699,10 +709,14 @@ TEST(optional, BadOptionalAccess)
     EXPECT_THROW(ol.value(), bad_optional_access);
     EXPECT_THROW(om.value(), bad_optional_access);
     EXPECT_THROW(on.value(), bad_optional_access);
+    EXPECT_THROW(oo.value(), bad_optional_access);
 }
 
 class Base
-{};
+{
+public:
+    virtual ~Base() = default;
+};
 
 class Derived : public Base
 {};
@@ -730,4 +744,70 @@ TEST(optional, OptionalConversion)
     // Conversion from Derived* to Base*
     ob = od;
     // od = ob; // Error cast from base to derived requires dynamic cast.
+    od = dynamic_cast<Derived*>(*ob);
+
+    EXPECT_TRUE(od);
+}
+
+bool FunctionTakingOptional(optional<int> value = {})
+{
+    if (value)
+    {
+        std::cout << "Value is valid: " << *value << std::endl;
+    }
+    else
+    {
+        std::cout << "Value is invalid." << std::endl;
+    }
+
+    return bool(value);
+}
+
+TEST(optional, FunctionTakingOptional)
+{
+    EXPECT_FALSE(FunctionTakingOptional());
+    EXPECT_TRUE(FunctionTakingOptional(1));
+}
+
+optional<int> FunctionReturningOptional(bool cond)
+{
+    if (cond)
+    {
+        return 1;
+    }
+    else
+    {
+        return {};
+    }
+}
+
+TEST(optional, FunctionReturningOptional)
+{
+    EXPECT_TRUE(FunctionReturningOptional(true));
+    EXPECT_FALSE(FunctionReturningOptional(false));
+}
+
+optional<int> findBiggest(const std::vector<int>& v)
+{
+    optional<int> biggest;
+    for (auto i : v)
+    {
+        if (!biggest || *biggest < i)
+            biggest = i;
+    }
+    return biggest;
+}
+
+TEST(optional, FindBiggest)
+{
+    std::vector<int> v;
+    auto biggest = findBiggest(v);
+
+    EXPECT_FALSE(biggest);
+
+    v = {5, 10, 15, 20, 15};
+
+    biggest = findBiggest(v);
+
+    EXPECT_EQ(*biggest, 20);
 }
