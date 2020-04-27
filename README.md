@@ -38,7 +38,7 @@ By default, the `opt::optional` does not contain a valid value. In this case, th
 
 ## Usage
 
-To declare an optional value, specify `wp::optional<T>` where `T` is the internal value type. By default, an optional value is _disengaged_. It is _engaged_ when it stores a valid value.
+To declare an optional value, specify `opt::optional<T>` where `T` is the internal value type. By default, an optional value is _disengaged_. It is _engaged_ when it stores a valid value.
 
 ```c++
 #include "optional.hpp"
@@ -186,8 +186,8 @@ assert(o1 > o0);
 assert(o0 <= o1);
 assert(o1 >= o0);
 
-assert(opt::nullopt != o0);     // nullopt is always less than an engaged value.
-assert(opt::nullopt < o0);
+assert(opt::nullopt != o0);
+assert(opt::nullopt < o0);      // nullopt is always less than an engaged value.
 assert(o0 > opt::nullopt);
 
 assert(opt::nullopt == o);      // nullopt compares equal to disengaged optional.
