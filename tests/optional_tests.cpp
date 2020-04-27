@@ -695,13 +695,13 @@ TEST(optional, BadOptionalAccess)
     optional<Person> oo;
 
     // Trying to access the value of a disengaged optional should assert in debug mode.
-    EXPECT_DEBUG_DEATH(*oi, "Assertion failed");
-    EXPECT_DEBUG_DEATH(*oj, "Assertion failed");
-    EXPECT_DEBUG_DEATH(*ok, "Assertion failed");
-    EXPECT_DEBUG_DEATH(*ol, "Assertion failed");
-    EXPECT_DEBUG_DEATH(*om, "Assertion failed");
-    EXPECT_DEBUG_DEATH(*on, "Assertion failed");
-    EXPECT_DEBUG_DEATH(*oo, "Assertion failed");
+    EXPECT_DEBUG_DEATH(*oi, "Assertion");
+    EXPECT_DEBUG_DEATH(*oj, "Assertion");
+    EXPECT_DEBUG_DEATH(*ok, "Assertion");
+    EXPECT_DEBUG_DEATH(*ol, "Assertion");
+    EXPECT_DEBUG_DEATH(*om, "Assertion");
+    EXPECT_DEBUG_DEATH(*on, "Assertion");
+    EXPECT_DEBUG_DEATH(*oo, "Assertion");
 
     EXPECT_THROW(oi.value(), bad_optional_access);
     EXPECT_THROW(oj.value(), bad_optional_access);
