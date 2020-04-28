@@ -831,4 +831,5 @@ TEST(optional, VoidOptional)
     oi = 1u;
 
     EXPECT_FALSE(oi);
+    EXPECT_EQ(oi.value_or(0), 0);
 }

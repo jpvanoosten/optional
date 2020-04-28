@@ -1185,12 +1185,12 @@ namespace opt
         void swap(optional<void>& rhs) noexcept
         {}
 
-        constexpr void operator->() const
+        void operator->() const
         {
             assert(!"Cannot dereference void optional");
         }
 
-        constexpr void operator*() const
+        void operator*() const
         {
             assert(!"Cannot dereference void optional");
         }
