@@ -811,3 +811,25 @@ TEST(optional, FindBiggest)
 
     EXPECT_EQ(*biggest, 20);
 }
+
+TEST(optional, VoidOptional)
+{
+    optional<void> oi;
+
+    EXPECT_FALSE(oi);
+    EXPECT_FALSE(oi.has_value());
+    EXPECT_DEBUG_DEATH(*oi, "Assertion");
+    EXPECT_THROW(oi.value(), bad_optional_access);
+    EXPECT_EQ(oi, nullopt);
+
+    // Assignment to nullptr should work.
+    oi = nullptr;
+
+    EXPECT_FALSE(oi);
+
+    // Assignment to anything should not change the optional value.
+    oi = 1u;
+
+    EXPECT_FALSE(oi);
+    EXPECT_EQ(oi.value_or(0), 0);
+}
