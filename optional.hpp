@@ -32,7 +32,7 @@
   */
 
 #include <cassert>          // for assert
-#include <exception>        // for std::exception
+#include <stdexcept>        // for std::logic_error
 #include <functional>       // for std::reference_wrapper
 #include <initializer_list> // for std::initializer_list
 #include <memory>           // for std::addressof
