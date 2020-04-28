@@ -1144,6 +1144,80 @@ namespace opt
         void reset() noexcept { ref = nullptr; }
     };
 
+    // Specialization for void types.
+    // Void optionals are always disengaged and you should never try to retrieve
+    // the value of a void optional.
+    template<>
+    class optional<void> : public detail::optional_tag
+    {
+    public:
+        using value_type = void;
+        using reference_type = void;
+        using reference_const_type = void;
+        using rval_reference_type = void;
+        using pointer_type = void*;
+        using pointer_const_type = void*;
+
+        constexpr optional() noexcept = default;
+        constexpr optional(nullopt_t) noexcept {}
+        constexpr optional(const optional& rhs) noexcept = default;
+
+        ~optional() = default;
+
+        optional& operator=(nullopt_t) noexcept {
+            return *this;
+        }
+
+        template <typename U>
+        optional<void>& operator=(U&& rhs) noexcept
+        {
+            return *this;
+        }
+
+        template<typename U>
+        void emplace(U&) noexcept
+        {}
+
+        template<typename U>
+        void emplace(U&&) noexcept
+        {}
+
+        void swap(optional<void>& rhs) noexcept
+        {}
+
+        constexpr void operator->() const
+        {
+            assert(!"Cannot dereference void optional");
+        }
+
+        constexpr void operator*() const
+        {
+            assert(!"Cannot dereference void optional");
+        }
+
+        void value() const {
+            throw bad_optional_access("Attempted to retrieve the value of a void optional.");
+        }
+
+        explicit constexpr operator bool() const noexcept
+        {
+            return false;
+        }
+
+        constexpr bool has_value() const noexcept {
+            return false;
+        }
+
+        template <class V>
+        constexpr auto value_or(V&& v) const
+        -> decltype(std::forward<V>(v))
+        {
+            return std::forward<V>(v);
+        }
+
+        void reset() noexcept {}
+    };
+
     template<class T>
     class optional<T&&>
     {
